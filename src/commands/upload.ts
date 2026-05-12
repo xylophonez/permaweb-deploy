@@ -9,6 +9,7 @@ import Table from 'cli-table3'
 import { type UploadConfig, uploadFlagConfigs } from '../constants/flags.js'
 import { getWalletConfig } from '../prompts/wallet.js'
 import { extractFlags, resolveConfig } from '../utils/config-resolver.js'
+import { DEFAULT_TURBO_UPLOAD_SERVICE } from '../utils/constants.js'
 import { hyperbeamBundlerLink } from '../utils/hyperbeam-uploader.js'
 import { expandPath } from '../utils/path.js'
 import { runUploadWorkflow } from '../workflows/upload-workflow.js'
@@ -16,14 +17,14 @@ import { runUploadWorkflow } from '../workflows/upload-workflow.js'
 export default class Upload extends Command {
   static override args = {}
 
-  static override description = 'Upload a file or folder to Arweave via Turbo without updating ArNS'
+  static override description = 'Upload a file or folder to Arweave without updating ArNS'
 
   static override examples = [
     '<%= config.bin %> upload --wallet ./wallet.json',
     '<%= config.bin %> upload --wallet ./wallet.json --deploy-folder ./dist',
     '<%= config.bin %> upload --wallet ./wallet.json --deploy-file ./dist/index.html',
     '<%= config.bin %> upload --private-key "$(cat wallet.json)" --on-demand ario --max-token-amount 1.5',
-    '<%= config.bin %> upload --wallet ./wallet.json --uploader https://up.arweave.net',
+    '<%= config.bin %> upload --wallet ./wallet.json --uploader https://upload.ardrive.io',
     '<%= config.bin %> upload --wallet ./wallet.json --uploader-type hyperbeam --uploader https://hyperbeam.example.com',
   ]
 
@@ -59,6 +60,11 @@ export default class Upload extends Command {
       const effectiveCacheMaxEntries = baseConfig['no-dedupe']
         ? 0
         : baseConfig['dedupe-cache-max-entries']
+      const uploaderType = baseConfig['uploader-type']
+      const uploader =
+        uploaderType === 'turbo'
+          ? (baseConfig.uploader ?? DEFAULT_TURBO_UPLOAD_SERVICE)
+          : baseConfig.uploader
 
       const uploadCfg = {
         'dedupe-cache-max-entries': effectiveCacheMaxEntries,
@@ -73,8 +79,8 @@ export default class Upload extends Command {
         'max-token-amount': baseConfig['max-token-amount'],
         'on-demand': baseConfig['on-demand'],
         'sig-type': baseConfig['sig-type'],
-        uploader: baseConfig.uploader,
-        'uploader-type': baseConfig['uploader-type'],
+        uploader,
+        'uploader-type': uploaderType,
       }
 
       if (interactive) {
@@ -122,6 +128,11 @@ export default class Upload extends Command {
           uploadCfg['uploader-type'] === 'hyperbeam' && uploadCfg.uploader
             ? hyperbeamBundlerLink(uploadCfg.uploader, txOrManifestId)
             : undefined
+        const bundlerLinkLabel = 'HyperBEAM URL'
+        const arweaveLabel =
+          uploadCfg['uploader-type'] === 'hyperbeam'
+            ? 'Arweave URL (after settlement)'
+            : 'Arweave URL'
 
         if (isCI) {
           this.log('Upload successful!')
@@ -132,10 +143,10 @@ export default class Upload extends Command {
           }
 
           if (bundlerLink) {
-            this.log('Bundler link: ' + bundlerLink)
+            this.log(`${bundlerLinkLabel}: ${bundlerLink}`)
           }
 
-          this.log(`Arweave URL: https://arweave.net/${txOrManifestId}`)
+          this.log(`${arweaveLabel}: https://arweave.net/${txOrManifestId}`)
         } else {
           const table = new Table({
             head: [chalk.cyan.bold('Property'), chalk.cyan.bold('Value')],
@@ -152,10 +163,10 @@ export default class Upload extends Command {
           }
 
           if (bundlerLink) {
-            table.push(['Bundler link', chalk.yellow(bundlerLink)])
+            table.push([bundlerLinkLabel, chalk.yellow(bundlerLink)])
           }
 
-          table.push(['Arweave URL', chalk.yellow(`https://arweave.net/${txOrManifestId}`)])
+          table.push([arweaveLabel, chalk.yellow(`https://arweave.net/${txOrManifestId}`)])
 
           const successMessage = boxen(
             `${chalk.green.bold('Upload successful!')}\n\n${table.toString()}`,

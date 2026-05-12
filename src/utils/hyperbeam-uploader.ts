@@ -115,12 +115,34 @@ function normalizeUploadUrl(base: string, uploadPath: string): string {
   return new URL(cleanPath, normalizedBase).toString()
 }
 
+function normalizeBaseUrl(base: string): string {
+  return base.replaceAll(/\/+$/g, '')
+}
+
 function arweaveAddressFromJwk(jwk: Record<string, unknown>): string {
   if (typeof jwk.n !== 'string') {
     throw new TypeError('Arweave JWK is missing modulus field "n"')
   }
 
   return createHash('sha256').update(Buffer.from(jwk.n, 'base64url')).digest('base64url')
+}
+
+export function withHyperbeamAoBundlerConventions(
+  profile: HyperbalanceProfile,
+): HyperbalanceProfile {
+  const pricing = [
+    ...(profile.pricing ?? []).filter((candidate) => candidate.action !== 'hyperbeam-upload'),
+    {
+      action: 'hyperbeam-upload',
+      query: {
+        amount: '{bytes}',
+        resource: 'arweave-bytes',
+      },
+      quotePath: '/~arweave-byte-pricing@1.0/quote',
+    },
+  ]
+
+  return { ...profile, pricing }
 }
 
 export function parseHyperbeamFundAmount(value: string): bigint {
@@ -134,11 +156,13 @@ export function parseHyperbeamFundAmount(value: string): bigint {
 export async function autoFundHyperbeamLedger(
   options: HyperbeamAutoFundOptions,
 ): Promise<FundingResult> {
-  const profile = await discoverHyperbeamAoBundlerProfile({
-    ledgerId: options.ledgerId,
-    nodeUrl: options.uploader,
-    tokenId: options.tokenId,
-  })
+  const profile = withHyperbeamAoBundlerConventions(
+    await discoverHyperbeamAoBundlerProfile({
+      ledgerId: options.ledgerId,
+      nodeUrl: options.uploader,
+      tokenId: options.tokenId,
+    }),
+  )
 
   return ensureHyperbeamCredit(options, profile)
 }
@@ -190,11 +214,13 @@ async function ensureHyperbeamCredit(
 export async function autoFundQuotedHyperbeamLedger(
   options: { signedBytes: number } & HyperbeamBundlerAutoFundOptions,
 ): Promise<FundingResult> {
-  const profile = await discoverHyperbeamAoBundlerProfile({
-    ledgerId: options.ledgerId,
-    nodeUrl: options.uploader,
-    tokenId: options.tokenId,
-  })
+  const profile = withHyperbeamAoBundlerConventions(
+    await discoverHyperbeamAoBundlerProfile({
+      ledgerId: options.ledgerId,
+      nodeUrl: options.uploader,
+      tokenId: options.tokenId,
+    }),
+  )
   const client = new HyperbalanceClient({ nodeUrl: options.uploader })
   let { ledgerId } = options
   let { minimumBalance } = options
@@ -228,7 +254,7 @@ export async function autoFundQuotedHyperbeamLedger(
 
 export function hyperbeamBundlerLink(uploader: string, id: string): string {
   const normalizedBase = uploader.endsWith('/') ? uploader : `${uploader}/`
-  return new URL(`~arweave@2.9/raw=${encodeURIComponent(id)}`, normalizedBase).toString()
+  return new URL(encodeURIComponent(id), normalizedBase).toString()
 }
 
 function responseId(headers: Headers, body: string): string | undefined {
@@ -245,8 +271,47 @@ function responseId(headers: Headers, body: string): string | undefined {
   }
 }
 
+async function signedJsonGet(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    headers: {
+      accept: 'application/json',
+      'accept-bundle': 'true',
+    },
+    method: 'GET',
+  })
+  const text = await res.text()
+
+  if (!res.ok) {
+    const preview = text.replaceAll(/\s+/g, ' ').trim().slice(0, 300)
+    throw new Error(
+      `HyperBEAM preflight failed with HTTP ${res.status}${preview ? `: ${preview}` : ''}`,
+    )
+  }
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return { body: text }
+  }
+}
+
+export async function preflightHyperbeamBundler(uploader: string): Promise<void> {
+  const status = await signedJsonGet(`${normalizeBaseUrl(uploader)}/~bundler@1.0/status/body`)
+  const { implementation } = status
+
+  if (implementation !== 'dev_lapee_bundler') {
+    throw new Error(
+      `HyperBEAM preflight expected dev_lapee_bundler, got ${String(implementation || 'unknown')}`,
+    )
+  }
+
+  await signedJsonGet(`${normalizeBaseUrl(uploader)}/~meta@1.0/info/address`)
+  await signedJsonGet(`${normalizeBaseUrl(uploader)}/~location@1.0/node`)
+}
+
 export class HyperbeamBundlerClient implements UploadClient {
   private readonly autoFund?: HyperbeamBundlerAutoFundOptions
+  private preflightPromise?: Promise<void>
   private readonly signer: unknown
   private readonly uploader: string
   private readonly uploadUrl: string
@@ -263,6 +328,9 @@ export class HyperbeamBundlerClient implements UploadClient {
   }
 
   async uploadFile(args: UploadFileArgs): Promise<{ id: string }> {
+    this.preflightPromise ??= preflightHyperbeamBundler(this.uploader)
+    await this.preflightPromise
+
     const data = args.file
       ? typeof args.file === 'string'
         ? fs.readFileSync(args.file)
@@ -306,13 +374,22 @@ export class HyperbeamBundlerClient implements UploadClient {
       )
     }
 
-    return { id: responseId(res.headers, body) || localId }
+    const remoteId = responseId(res.headers, body)
+    if (remoteId && remoteId !== localId) {
+      throw new Error(
+        `HyperBEAM bundler returned ${remoteId}, but the signed data item ID is ${localId}`,
+      )
+    }
+
+    return { id: localId }
   }
 
   private async paymentHint(): Promise<string | undefined> {
     try {
       return hyperbeamAoFundingHint(
-        await discoverHyperbeamAoBundlerProfile({ nodeUrl: this.uploader }),
+        withHyperbeamAoBundlerConventions(
+          await discoverHyperbeamAoBundlerProfile({ nodeUrl: this.uploader }),
+        ),
       )
     } catch {
       return undefined

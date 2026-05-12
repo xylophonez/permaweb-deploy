@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { TEST_ETH_PRIVATE_KEY } from '../constants.js'
-import { mockInsufficientBalance } from '../mocks/turbo-handlers.js'
+import { mockInsufficientBalance, mockTurboData } from '../mocks/turbo-handlers.js'
 import { server } from '../setup.js'
 
 describe(
@@ -143,11 +143,72 @@ describe(
       expect(result.error).toBeUndefined()
     })
 
+    describe('turbo uploader', () => {
+      it('should use up.arweave.net by default for Turbo-compatible uploads', async () => {
+        const seenUploads: string[] = []
+
+        server.use(
+          http.post('https://up.arweave.net/v1/tx/:token', async ({ request }) => {
+            seenUploads.push(request.url)
+            return HttpResponse.json(mockTurboData.uploadResponse())
+          }),
+        )
+
+        const result = await runCommand([
+          'upload',
+          '--deploy-file',
+          './tests/fixtures/test-app/index.html',
+          '--wallet',
+          './tests/fixtures/test_wallet.json',
+          '--no-dedupe',
+        ])
+
+        expect(result.error).toBeUndefined()
+        expect(seenUploads.length).toBeGreaterThan(0)
+        expect(seenUploads.every((url) => url.startsWith('https://up.arweave.net/'))).toBe(true)
+      })
+
+      it('should still allow overriding the Turbo-compatible upload service', async () => {
+        const seenUploads: string[] = []
+
+        server.use(
+          http.post('https://upload.ardrive.dev/v1/tx/:token', async ({ request }) => {
+            seenUploads.push(request.url)
+            return HttpResponse.json(mockTurboData.uploadResponse())
+          }),
+        )
+
+        const result = await runCommand([
+          'upload',
+          '--deploy-file',
+          './tests/fixtures/test-app/index.html',
+          '--wallet',
+          './tests/fixtures/test_wallet.json',
+          '--uploader',
+          'https://upload.ardrive.dev',
+          '--no-dedupe',
+        ])
+
+        expect(result.error).toBeUndefined()
+        expect(seenUploads.length).toBeGreaterThan(0)
+        expect(seenUploads.every((url) => url.startsWith('https://upload.ardrive.dev/'))).toBe(true)
+      })
+    })
+
     describe('hyperbeam uploader', () => {
       it('should upload a file through a HyperBEAM bundler route', async () => {
         const seenUploads: Array<{ contentType: string; size: number }> = []
 
         server.use(
+          http.get('https://hyperbeam.test/~bundler@1.0/status/body', () =>
+            HttpResponse.json({ implementation: 'dev_lapee_bundler', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~meta@1.0/info/address', () =>
+            HttpResponse.json({ body: 'node-deposit-address', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~location@1.0/node', () =>
+            HttpResponse.json({ type: 'location', url: 'https://hyperbeam.test' }),
+          ),
           http.post('https://hyperbeam.test/~bundler@1.0/item', async ({ request }) => {
             const raw = Buffer.from(await request.arrayBuffer())
             seenUploads.push({
@@ -156,7 +217,6 @@ describe(
             })
 
             return new HttpResponse('<html><title>HyperBEAM</title></html>', {
-              headers: { id: 'mock-hyperbeam-dataitem-id' },
               status: 200,
             })
           }),
@@ -198,8 +258,17 @@ describe(
 
       it('should include AO funding metadata when a HyperBEAM upload needs payment', async () => {
         server.use(
+          http.get('https://hyperbeam.test/~bundler@1.0/status/body', () =>
+            HttpResponse.json({ implementation: 'dev_lapee_bundler', status: 200 }),
+          ),
           http.get('https://hyperbeam.test/~meta@1.0/info/address', () =>
+            HttpResponse.text('node-operator-address'),
+          ),
+          http.get('https://hyperbeam.test/~meta@1.0/info/ao-payment-deposit-address', () =>
             HttpResponse.text('node-deposit-address'),
+          ),
+          http.get('https://hyperbeam.test/~location@1.0/node', () =>
+            HttpResponse.json({ type: 'location', url: 'https://hyperbeam.test' }),
           ),
           http.post('https://hyperbeam.test/~bundler@1.0/item', () =>
             HttpResponse.text('insufficient local ledger balance', { status: 402 }),
@@ -222,6 +291,89 @@ describe(
         expect(result.error).toBeDefined()
         expect(result.error?.message).toContain('node-deposit-address')
         expect(result.error?.message).toContain('default')
+      })
+
+      it('should accept a HyperBEAM upload without polling bundle completion', async () => {
+        const seenUploads: Array<{ contentType: string; size: number }> = []
+        const seenReads: string[] = []
+
+        server.use(
+          http.get('https://hyperbeam.test/~bundler@1.0/status/body', () =>
+            HttpResponse.json({ implementation: 'dev_lapee_bundler', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~meta@1.0/info/address', () =>
+            HttpResponse.json({ body: 'node-deposit-address', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~location@1.0/node', () =>
+            HttpResponse.json({ type: 'location', url: 'https://hyperbeam.test' }),
+          ),
+          http.post('https://hyperbeam.test/~bundler@1.0/item', async ({ request }) => {
+            const raw = Buffer.from(await request.arrayBuffer())
+            seenUploads.push({
+              contentType: request.headers.get('content-type') || '',
+              size: raw.length,
+            })
+
+            return HttpResponse.json({ status: 200 })
+          }),
+          http.get('https://hyperbeam.test/~cache@1.0/read', ({ request }) => {
+            const read = new URL(request.url).searchParams.get('read') ?? ''
+            seenReads.push(read)
+            return HttpResponse.json({ error: 'unexpected cache read' }, { status: 500 })
+          }),
+        )
+
+        const result = await runCommand([
+          'upload',
+          '--deploy-file',
+          './tests/fixtures/test-app/index.html',
+          '--wallet',
+          './tests/fixtures/test_wallet.json',
+          '--uploader-type',
+          'hyperbeam',
+          '--uploader',
+          'https://hyperbeam.test',
+          '--no-dedupe',
+        ])
+
+        expect(result.error).toBeUndefined()
+        expect(seenUploads).toHaveLength(1)
+        expect(seenUploads[0].contentType).toBe('application/octet-stream')
+        expect(seenUploads[0].size).toBeGreaterThan(0)
+        expect(seenReads).toHaveLength(0)
+      })
+
+      it('should reject a HyperBEAM response ID that differs from the signed item ID', async () => {
+        server.use(
+          http.get('https://hyperbeam.test/~bundler@1.0/status/body', () =>
+            HttpResponse.json({ implementation: 'dev_lapee_bundler', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~meta@1.0/info/address', () =>
+            HttpResponse.json({ body: 'node-deposit-address', status: 200 }),
+          ),
+          http.get('https://hyperbeam.test/~location@1.0/node', () =>
+            HttpResponse.json({ type: 'location', url: 'https://hyperbeam.test' }),
+          ),
+          http.post('https://hyperbeam.test/~bundler@1.0/item', () =>
+            HttpResponse.json({ id: 'wrong-item-id', status: 200 }),
+          ),
+        )
+
+        const result = await runCommand([
+          'upload',
+          '--deploy-file',
+          './tests/fixtures/test-app/index.html',
+          '--wallet',
+          './tests/fixtures/test_wallet.json',
+          '--uploader-type',
+          'hyperbeam',
+          '--uploader',
+          'https://hyperbeam.test',
+          '--no-dedupe',
+        ])
+
+        expect(result.error).toBeDefined()
+        expect(result.error?.message).toContain('signed data item ID')
       })
     })
 

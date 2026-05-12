@@ -14,6 +14,7 @@ import { promptAdvancedOptions } from '../prompts/arns.js'
 import { getWalletConfig } from '../prompts/wallet.js'
 import type { SignerType } from '../types/index.js'
 import { extractFlags, resolveConfig } from '../utils/config-resolver.js'
+import { DEFAULT_TURBO_UPLOAD_SERVICE } from '../utils/constants.js'
 import { hyperbeamBundlerLink } from '../utils/hyperbeam-uploader.js'
 import { expandPath } from '../utils/path.js'
 import { createSigner } from '../utils/signer.js'
@@ -33,7 +34,7 @@ export default class Deploy extends Command {
     '<%= config.bin %> deploy --arns-name my-app --sig-type ethereum --wallet ./private-key.txt',
     '<%= config.bin %> deploy --arns-name my-app --sig-type ethereum --private-key "0x..."',
     '<%= config.bin %> deploy --arns-name my-app --on-demand ario --max-token-amount 1000',
-    '<%= config.bin %> deploy --arns-name my-app --uploader https://up.arweave.net',
+    '<%= config.bin %> deploy --arns-name my-app --uploader https://upload.ardrive.io',
     '<%= config.bin %> deploy --arns-name my-app --uploader-type hyperbeam --uploader https://hyperbeam.example.com',
     '<%= config.bin %> upload --wallet ./wallet.json  # Upload only (no ArNS update)',
   ]
@@ -85,6 +86,11 @@ export default class Deploy extends Command {
       const effectiveCacheMaxEntries = baseConfig['no-dedupe']
         ? 0
         : baseConfig['dedupe-cache-max-entries']
+      const uploaderType = baseConfig['uploader-type']
+      const uploader =
+        uploaderType === 'turbo'
+          ? (baseConfig.uploader ?? DEFAULT_TURBO_UPLOAD_SERVICE)
+          : baseConfig.uploader
 
       const deployConfig: DeployConfig = {
         'ario-process': advancedOptions?.arioProcess || baseConfig['ario-process'],
@@ -105,8 +111,8 @@ export default class Deploy extends Command {
         'sig-type': baseConfig['sig-type'],
         'ttl-seconds': advancedOptions?.ttlSeconds || baseConfig['ttl-seconds'],
         undername: advancedOptions?.undername || baseConfig.undername,
-        uploader: baseConfig.uploader,
-        'uploader-type': baseConfig['uploader-type'],
+        uploader,
+        'uploader-type': uploaderType,
         wallet: walletConfig.wallet,
       }
 
@@ -214,6 +220,11 @@ export default class Deploy extends Command {
           deployConfig['uploader-type'] === 'hyperbeam' && deployConfig.uploader
             ? hyperbeamBundlerLink(deployConfig.uploader, txOrManifestId)
             : undefined
+        const bundlerLinkLabel = 'HyperBEAM URL'
+        const arweaveLabel =
+          deployConfig['uploader-type'] === 'hyperbeam'
+            ? 'Arweave URL (after settlement)'
+            : 'Arweave URL'
 
         if (isCI) {
           this.log('Deployment Successful!')
@@ -224,7 +235,7 @@ export default class Deploy extends Command {
           }
 
           if (bundlerLink) {
-            this.log('Bundler link: ' + bundlerLink)
+            this.log(`${bundlerLinkLabel}: ${bundlerLink}`)
           }
 
           this.log('ArNS Name: ' + deployConfig['arns-name'])
@@ -232,7 +243,7 @@ export default class Deploy extends Command {
           this.log('ANT: ' + arnsNameRecord.processId)
           this.log('ARIO Process: ' + arioProcess)
           this.log('TTL Seconds: ' + deployConfig['ttl-seconds'])
-          this.log(`Arweave URL: https://arweave.net/${txOrManifestId}`)
+          this.log(`${arweaveLabel}: https://arweave.net/${txOrManifestId}`)
         } else {
           const table = new Table({
             head: [chalk.cyan.bold('Property'), chalk.cyan.bold('Value')],
@@ -250,14 +261,14 @@ export default class Deploy extends Command {
                 ] as [string, string][])
               : []),
             ...(bundlerLink
-              ? ([['Bundler link', chalk.yellow(bundlerLink)]] as [string, string][])
+              ? ([[bundlerLinkLabel, chalk.yellow(bundlerLink)]] as [string, string][])
               : []),
             ['ArNS Name', chalk.yellow(deployConfig['arns-name'])],
             ['Undername', chalk.yellow(deployConfig.undername)],
             ['ANT', chalk.cyan(arnsNameRecord.processId)],
             ['ARIO Process', chalk.gray(arioProcess)],
             ['TTL Seconds', chalk.blue(deployConfig['ttl-seconds'])],
-            ['Arweave URL', chalk.yellow(`https://arweave.net/${txOrManifestId}`)],
+            [arweaveLabel, chalk.yellow(`https://arweave.net/${txOrManifestId}`)],
           )
 
           const successMessage = boxen(

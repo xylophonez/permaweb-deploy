@@ -118,119 +118,127 @@ export const mockTurboData = {
  * Default MSW handlers for Turbo Upload Service
  * Based on OpenAPI spec: https://turbo.ardrive.io/api-docs
  */
-export const turboUploadHandlers = [
-  // Service info
-  http.get('https://upload.ardrive.io/', async () =>
-    HttpResponse.json({
-      addresses: {
-        arweave: '8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
-        ethereum: '0x8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
-        solana: '8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
-      },
-      gateway: 'https://arweave.net',
-      version: '0.1.0',
-    }),
-  ),
+const turboUploadServiceUrls = ['https://up.arweave.net', 'https://upload.ardrive.io']
 
-  // Upload single data item (POST /v1/tx)
-  http.post('https://upload.ardrive.io/v1/tx', async () =>
-    HttpResponse.json(mockTurboData.uploadResponse()),
-  ),
+function createTurboUploadHandlers(uploadServiceUrl: string) {
+  return [
+    // Service info
+    http.get(`${uploadServiceUrl}/`, async () =>
+      HttpResponse.json({
+        addresses: {
+          arweave: '8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
+          ethereum: '0x8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
+          solana: '8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0',
+        },
+        gateway: 'https://arweave.net',
+        version: '0.1.0',
+      }),
+    ),
 
-  // Upload with specific token (POST /v1/tx/:token)
-  http.post('https://upload.ardrive.io/v1/tx/:token', async ({ params: _params }) =>
-    HttpResponse.json(mockTurboData.uploadResponse()),
-  ),
+    // Upload single data item (POST /v1/tx)
+    http.post(`${uploadServiceUrl}/v1/tx`, async () =>
+      HttpResponse.json(mockTurboData.uploadResponse()),
+    ),
 
-  // Get data item status (GET /v1/tx/:id/status)
-  http.get('https://upload.ardrive.io/v1/tx/:id/status', async ({ params: _params }) =>
-    HttpResponse.json({
-      bundleId: 'QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o',
-      info: 'permanent',
-      status: 'CONFIRMED',
-      winc: '1000000',
-    }),
-  ),
+    // Upload with specific token (POST /v1/tx/:token)
+    http.post(`${uploadServiceUrl}/v1/tx/:token`, async ({ params: _params }) =>
+      HttpResponse.json(mockTurboData.uploadResponse()),
+    ),
 
-  // Get data item offsets (GET /v1/tx/:id/offsets)
-  http.get('https://upload.ardrive.io/v1/tx/:id/offsets', async ({ params: _params }) =>
-    HttpResponse.json({
-      payloadContentType: 'application/json',
-      payloadDataStart: 1024,
-      rawContentLength: 123_456,
-      rootBundleId: 'J40R1BgFSI1_7p25QW49T7P46BePJJnlDrsFGY1YWbM',
-      startOffsetInRootBundle: 12_345,
-    }),
-  ),
+    // Get data item status (GET /v1/tx/:id/status)
+    http.get(`${uploadServiceUrl}/v1/tx/:id/status`, async ({ params: _params }) =>
+      HttpResponse.json({
+        bundleId: 'QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o',
+        info: 'permanent',
+        status: 'CONFIRMED',
+        winc: '1000000',
+      }),
+    ),
 
-  // Get price for bytes (GET /price/:token/:byteCount)
-  http.get('https://upload.ardrive.io/price/:token/:byteCount', async ({ params: _params }) =>
-    HttpResponse.text('1000000'),
-  ),
+    // Get data item offsets (GET /v1/tx/:id/offsets)
+    http.get(`${uploadServiceUrl}/v1/tx/:id/offsets`, async ({ params: _params }) =>
+      HttpResponse.json({
+        payloadContentType: 'application/json',
+        payloadDataStart: 1024,
+        rawContentLength: 123_456,
+        rootBundleId: 'J40R1BgFSI1_7p25QW49T7P46BePJJnlDrsFGY1YWbM',
+        startOffsetInRootBundle: 12_345,
+      }),
+    ),
 
-  // Get price (GET /price/:token)
-  http.get('https://upload.ardrive.io/price/:token', async ({ params: _params }) =>
-    HttpResponse.text('1000000'),
-  ),
+    // Get price for bytes (GET /price/:token/:byteCount)
+    http.get(`${uploadServiceUrl}/price/:token/:byteCount`, async ({ params: _params }) =>
+      HttpResponse.text('1000000'),
+    ),
 
-  // Get account balance (GET /account/balance/:id)
-  http.get('https://upload.ardrive.io/account/balance/:id', async ({ params: _params }) =>
-    HttpResponse.text('1000000000000'),
-  ),
+    // Get price (GET /price/:token)
+    http.get(`${uploadServiceUrl}/price/:token`, async ({ params: _params }) =>
+      HttpResponse.text('1000000'),
+    ),
 
-  // Multi-part upload: Create (GET /chunks/-1/-1)
-  http.get('https://upload.ardrive.io/v1/chunks/-1/-1', async () =>
-    HttpResponse.json({
-      id: 'mock-upload-id-123',
-      max: 500_000_000,
-      min: 25_000,
-    }),
-  ),
+    // Get account balance (GET /account/balance/:id)
+    http.get(`${uploadServiceUrl}/account/balance/:id`, async ({ params: _params }) =>
+      HttpResponse.text('1000000000000'),
+    ),
 
-  // Multi-part upload: Get status (GET /chunks/:token/:uploadId/-1)
-  http.get('https://upload.ardrive.io/chunks/:token/:uploadId/-1', async ({ params }) =>
-    HttpResponse.json({
-      chunks: [[0, 25_000_000]],
-      id: params.uploadId,
-      max: 500_000_000,
-      min: 25_000,
-      size: 25_000_000,
-    }),
-  ),
+    // Multi-part upload: Create (GET /chunks/-1/-1)
+    http.get(`${uploadServiceUrl}/v1/chunks/-1/-1`, async () =>
+      HttpResponse.json({
+        id: 'mock-upload-id-123',
+        max: 500_000_000,
+        min: 25_000,
+      }),
+    ),
 
-  // Multi-part upload: Upload chunk (POST /chunks/:token/:uploadId/:chunkOffset)
-  http.post(
-    'https://upload.ardrive.io/chunks/:token/:uploadId/:chunkOffset',
-    async () => new HttpResponse(null, { status: 200 }),
-  ),
+    // Multi-part upload: Get status (GET /chunks/:token/:uploadId/-1)
+    http.get(`${uploadServiceUrl}/chunks/:token/:uploadId/-1`, async ({ params }) =>
+      HttpResponse.json({
+        chunks: [[0, 25_000_000]],
+        id: params.uploadId,
+        max: 500_000_000,
+        min: 25_000,
+        size: 25_000_000,
+      }),
+    ),
 
-  // Multi-part upload: Finalize (POST /chunks/:token/:uploadId/-1)
-  http.post('https://upload.ardrive.io/chunks/:token/:uploadId/-1', async ({ params }) =>
-    HttpResponse.json({
-      data: mockTurboData.uploadResponse(params.uploadId as string),
-      id: params.uploadId,
-    }),
-  ),
+    // Multi-part upload: Upload chunk (POST /chunks/:token/:uploadId/:chunkOffset)
+    http.post(
+      `${uploadServiceUrl}/chunks/:token/:uploadId/:chunkOffset`,
+      async () => new HttpResponse(null, { status: 200 }),
+    ),
 
-  // Multi-part upload: Finalize async (POST /chunks/:token/:uploadId/finalize)
-  http.post('https://upload.ardrive.io/chunks/:token/:uploadId/finalize', async ({ params }) =>
-    HttpResponse.json(
-      {
+    // Multi-part upload: Finalize (POST /chunks/:token/:uploadId/-1)
+    http.post(`${uploadServiceUrl}/chunks/:token/:uploadId/-1`, async ({ params }) =>
+      HttpResponse.json({
         data: mockTurboData.uploadResponse(params.uploadId as string),
         id: params.uploadId,
-      },
-      { status: 202 },
+      }),
     ),
-  ),
 
-  // Multi-part upload: Get finalize status (GET /chunks/:token/:uploadId/status)
-  http.get('https://upload.ardrive.io/chunks/:token/:uploadId/status', async () =>
-    HttpResponse.json({
-      status: 'VALIDATING',
-      timestamp: Date.now(),
-    }),
-  ),
-]
+    // Multi-part upload: Finalize async (POST /chunks/:token/:uploadId/finalize)
+    http.post(`${uploadServiceUrl}/chunks/:token/:uploadId/finalize`, async ({ params }) =>
+      HttpResponse.json(
+        {
+          data: mockTurboData.uploadResponse(params.uploadId as string),
+          id: params.uploadId,
+        },
+        { status: 202 },
+      ),
+    ),
+
+    // Multi-part upload: Get finalize status (GET /chunks/:token/:uploadId/status)
+    http.get(`${uploadServiceUrl}/chunks/:token/:uploadId/status`, async () =>
+      HttpResponse.json({
+        status: 'VALIDATING',
+        timestamp: Date.now(),
+      }),
+    ),
+  ]
+}
+
+export const turboUploadHandlers = turboUploadServiceUrls.flatMap((uploadServiceUrl) =>
+  createTurboUploadHandlers(uploadServiceUrl),
+)
 
 /**
  * Default MSW handlers for Turbo Payment Service
@@ -483,7 +491,7 @@ export const turboHandlers = [...turboUploadHandlers, ...turboPaymentHandlers, .
  * @returns MSW handler for upload success
  */
 export function mockUploadSuccess(txId: string) {
-  return http.post('https://upload.ardrive.io/v1/tx', async () =>
+  return http.post('https://up.arweave.net/v1/tx', async () =>
     HttpResponse.json(mockTurboData.uploadResponse(txId)),
   )
 }
@@ -495,7 +503,7 @@ export function mockUploadSuccess(txId: string) {
  * @returns MSW handler for upload failure
  */
 export function mockUploadFailure(status = 500, message = 'Upload failed') {
-  return http.post('https://upload.ardrive.io/v1/tx', async () =>
+  return http.post('https://up.arweave.net/v1/tx', async () =>
     HttpResponse.json({ error: message }, { status }),
   )
 }

@@ -13,6 +13,7 @@ import ora from 'ora'
 
 import type { SignerType } from '../types/index.js'
 import { cleanupCache, loadCache, saveCache } from '../utils/cache.js'
+import { DEFAULT_TURBO_UPLOAD_SERVICE } from '../utils/constants.js'
 import {
   type HyperbeamBundlerAutoFundOptions,
   HyperbeamBundlerClient,
@@ -58,7 +59,7 @@ export interface UploadWorkflowIo {
 }
 
 /**
- * Sign in to Turbo and upload a file or folder.
+ * Initialize an upload client and upload a file or folder.
  *
  * @param deployKey - Wallet material (base64 JWK or hex private key per sig-type)
  * @param config - Upload paths, dedupe, bundler service URL, on-demand payment
@@ -78,15 +79,15 @@ export async function runUploadWorkflow(
 
   if (uploaderType === 'hyperbeam') {
     if (config['sig-type'] !== 'arweave') {
-      io.error('HyperBEAM uploads require --sig-type arweave')
+      io.error(`${uploaderType} uploads require --sig-type arweave`)
     }
 
     if (!config.uploader) {
-      io.error('HyperBEAM uploads require --uploader <node-url>')
+      io.error(`${uploaderType} uploads require --uploader <node-url>`)
     }
 
     if (config['on-demand']) {
-      io.error('HyperBEAM uploads do not support Turbo --on-demand payments')
+      io.error(`${uploaderType} uploads do not support Turbo --on-demand payments`)
     }
 
     let autoFund: HyperbeamBundlerAutoFundOptions | undefined
@@ -116,18 +117,19 @@ export async function runUploadWorkflow(
     const { signer, token } = createSigner(config['sig-type'] as SignerType, deployKey)
     spinner.succeed(`Signer created (${chalk.cyan(config['sig-type'])})`)
 
-    spinner.start('Initializing Turbo')
+    spinner.start('Initializing upload service')
 
-    const turboFactoryArgs: TurboAuthenticatedConfiguration = { signer, token }
-
-    if (config.uploader) {
-      turboFactoryArgs.uploadServiceConfig = { url: config.uploader }
+    const uploadServiceUrl = config.uploader ?? DEFAULT_TURBO_UPLOAD_SERVICE
+    const turboFactoryArgs: TurboAuthenticatedConfiguration = {
+      signer,
+      token,
+      uploadServiceConfig: { url: uploadServiceUrl },
     }
 
     turbo = TurboFactory.authenticated(turboFactoryArgs)
     uploadClient = turbo as UploadClient
 
-    spinner.succeed('Turbo initialized')
+    spinner.succeed(`Upload service initialized (${chalk.cyan(uploadServiceUrl)})`)
   }
 
   let fundingMode: OnDemandFunding | undefined

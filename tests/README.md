@@ -94,7 +94,7 @@ Tests use [MSW](https://mswjs.io/) to intercept and mock HTTP requests at the ne
 
 The MSW server intercepts requests to:
 
-1. **Turbo Upload Service** (`upload.ardrive.io`)
+1. **Turbo-compatible Upload Services** (`up.arweave.net`, `upload.ardrive.io`)
    - File and folder uploads
    - Multi-part uploads
    - Upload status checks

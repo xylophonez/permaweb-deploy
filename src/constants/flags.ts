@@ -5,7 +5,7 @@ import { promptArioProcess, promptArnsName } from '../prompts/arns.js'
 import { promptDeployTarget } from '../prompts/deployment.js'
 import { promptSignerType } from '../prompts/wallet.js'
 import { createFlagConfig, type ResolvedConfig } from '../utils/config-resolver.js'
-import { TTL_MAX, TTL_MIN } from '../utils/constants.js'
+import { DEFAULT_TURBO_UPLOAD_SERVICE, TTL_MAX, TTL_MIN } from '../utils/constants.js'
 import {
   resolveArioProcess,
   validateArioProcess,
@@ -206,8 +206,7 @@ export const globalFlags = {
   }),
   uploader: createFlagConfig<string | undefined>({
     flag: Flags.string({
-      description:
-        'Base URL of the bundler service to use. For Turbo, omit for ArDrive production: https://upload.ardrive.io. For HyperBEAM, pass the node URL, for example https://hyperbeam.example.com.',
+      description: `Base URL of the bundler service to use. For Turbo-compatible uploads, omit for ${DEFAULT_TURBO_UPLOAD_SERVICE}. For HyperBEAM, pass the node URL, for example https://hyperbeam.example.com.`,
       required: false,
     }),
   }),
@@ -215,7 +214,7 @@ export const globalFlags = {
     flag: Flags.string({
       default: 'turbo',
       description:
-        'Uploader protocol to use. turbo uses the Turbo bundler API; hyperbeam signs ANS-104 items and posts them to a HyperBEAM bundler route.',
+        'Uploader protocol to use. turbo uses a Turbo-compatible bundler API; hyperbeam signs ANS-104 items and posts them to HyperBEAM-compatible bundler routes.',
       options: ['turbo', 'hyperbeam'],
       required: false,
     }),
@@ -340,7 +339,7 @@ export const deployFlagConfigs = {
 } as const
 
 /**
- * Upload command — file/folder to Arweave via Turbo without updating ArNS
+ * Upload command — file/folder to Arweave without updating ArNS
  */
 export const uploadFlagConfigs = {
   'dedupe-cache-max-entries': globalFlags.dedupeCacheMaxEntries,

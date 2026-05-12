@@ -4,19 +4,46 @@ import {
   hyperbeamAoFundingHint,
   hyperbeamBundlerLink,
   parseHyperbeamFundAmount,
+  withHyperbeamAoBundlerConventions,
 } from '../hyperbeam-uploader.js'
 
 describe('hyperbeamBundlerLink', () => {
-  it('builds a direct HyperBEAM raw resolver URL', () => {
+  it('builds the direct HyperBEAM item URL', () => {
     expect(hyperbeamBundlerLink('https://hyperbeam.example.com', 'abc123')).toBe(
-      'https://hyperbeam.example.com/~arweave@2.9/raw=abc123',
+      'https://hyperbeam.example.com/abc123',
     )
   })
 
   it('handles uploader URLs with trailing slashes', () => {
     expect(hyperbeamBundlerLink('https://hyperbeam.example.com/', 'abc123')).toBe(
-      'https://hyperbeam.example.com/~arweave@2.9/raw=abc123',
+      'https://hyperbeam.example.com/abc123',
     )
+  })
+})
+
+describe('withHyperbeamAoBundlerConventions', () => {
+  it('uses the live HyperBEAM byte-pricing quote route', () => {
+    const profile = withHyperbeamAoBundlerConventions({
+      ledgers: [],
+      pricing: [
+        {
+          action: 'hyperbeam-upload',
+          query: { amount: '{bytes}', resource: 'arweave-bytes' },
+          quotePath: '/~metering@1.0/quote',
+        },
+      ],
+      tokens: [],
+      version: 'hyperbalance@0.1',
+    })
+
+    expect(profile.pricing).toContainEqual({
+      action: 'hyperbeam-upload',
+      query: {
+        amount: '{bytes}',
+        resource: 'arweave-bytes',
+      },
+      quotePath: '/~arweave-byte-pricing@1.0/quote',
+    })
   })
 })
 

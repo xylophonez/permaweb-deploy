@@ -12,7 +12,7 @@ const VERBOSE_LOGGING = process.env.MSW_VERBOSE === 'true'
 /**
  * MSW Server for mocking HTTP requests in tests
  * Configured to intercept requests to:
- * - Turbo Upload Service (upload.ardrive.io)
+ * - Turbo-compatible upload services (up.arweave.net and upload.ardrive.io)
  * - Turbo Payment Service (payment.ardrive.io)
  * - AO Compute Unit (cu.ardrive.io)
  * - AO Message Unit (mu.ao-testnet.xyz)
